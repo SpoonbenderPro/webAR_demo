@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>WebAR — Stick-to-Camera + CTA</title>
 
-  <!-- ESM imports (your working method) -->
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +18,6 @@
   <style>
     html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
     #container{position:fixed;inset:0}
-    /* MindAR camera <video> behind the WebGL canvas */
     #container video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
     #container canvas{position:fixed;inset:0;z-index:1}
     #hint{position:fixed;left:0;right:0;top:10px;text-align:center;color:#fff;opacity:.9;z-index:3}
@@ -34,7 +32,6 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <!-- Source video for the plane -->
   <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted preload="auto" loop></video>
 
   <div id="ui">
@@ -50,7 +47,6 @@
     import * as THREE from 'three';
     import { MindARThree } from 'mindar-image-three';
 
-    // 👉 Set your website here
     const CTA_URL = 'https://example.com';
     document.getElementById('ctaBtn').href = CTA_URL;
 
@@ -66,47 +62,42 @@
       container,
       imageTargetSrc: './targets.mind',
       uiLoading:'no', uiScanning:'no', uiError:'no',
-      warmupTolerance: 2, missTolerance: 8
+      warmupTolerance: 2,
+      missTolerance: 15   // ⬅️ increased to reduce flicker
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.touchAction = 'none';
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
- // Video texture + plane
-const videoTex = new THREE.VideoTexture(videoEl);
-videoTex.encoding = THREE.sRGBEncoding;
+    // 👉 Smoothing helpers
+    const tmpPos = new THREE.Vector3();
+    const tmpQuat = new THREE.Quaternion();
+    let followAnchor = false;
+    const SMOOTH = 0.15; // 0.1 = very smooth, 0.3 = more responsive
 
-const plane = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.78, 1),  // 16:9 ratio
-  new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:true })
-);
-
-// 👉 Scale the video plane so it fits the target image size
-const TARGET_W = 1.0;    // width of your target
-const TARGET_H = 0.56;   // height of your target (change if your marker is taller/shorter)
-
-const VID_W = 16/9;
-const VID_H = 1.0;
-
-plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
+    // 🎥 Video texture + plane (16:9 ratio)
+    const videoTex = new THREE.VideoTexture(videoEl);
+    videoTex.encoding = THREE.sRGBEncoding;
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.78, 1), // 1920/1080 = 1.78
+      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:true })
+    );
+    scene.add(plane); // not under anchor directly
 
     // Anchor on target index 0
     const anchor = mindar.addAnchor(0);
-    anchor.group.add(plane);
 
-    // 🔁 Stick-to-camera mode: when target lost, reparent plane to the camera so it follows view
+    // 🔁 Stick-to-camera vs anchor
     const placeInFrontOfCamera = () => {
+      followAnchor = false;
       camera.add(plane);
-      plane.position.set(0, 0, -1.0);    // 1 meter in front
+      plane.position.set(0, 0, -1.0);
       plane.rotation.set(0, 0, 0);
       plane.visible = true;
     };
     const placeOnAnchor = () => {
-      // reset local transform and reattach to the anchor
-      plane.position.set(0,0,0);
-      plane.rotation.set(0,0,0);
-      anchor.group.add(plane);
+      followAnchor = true;  // now follow anchor smoothly
       plane.visible = true;
     };
 
@@ -117,11 +108,10 @@ plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
     };
     anchor.onTargetLost = () => {
       hint.textContent = 'Move back to the target…';
-      placeInFrontOfCamera();          // keep video attached to camera view
-      // keep playing; don't pause/reset
+      placeInFrontOfCamera();
     };
 
-    // UI: mute/unmute, restart, start
+    // UI
     const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
     const showNudge = () => { nudge.style.display='block'; setTimeout(()=> nudge.style.display='none', 2000); };
     setMuteUI();
@@ -138,12 +128,19 @@ plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
 
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true; startBtn.textContent = 'Starting…';
-      // Nudge iOS autoplay
       videoEl.muted = true; try { await videoEl.play(); } catch {} videoEl.pause();
 
       try {
-        await mindar.start();                          // camera prompt
-        renderer.setAnimationLoop(()=>renderer.render(scene, camera));
+        await mindar.start();
+        renderer.setAnimationLoop(()=>{
+          if (followAnchor) {
+            anchor.group.getWorldPosition(tmpPos);
+            anchor.group.getWorldQuaternion(tmpQuat);
+            plane.position.lerp(tmpPos, SMOOTH);
+            THREE.Quaternion.slerp(plane.quaternion, tmpQuat, plane.quaternion, SMOOTH);
+          }
+          renderer.render(scene, camera);
+        });
         startBtn.textContent = 'Running…';
       } catch (e) {
         console.error(e);
@@ -151,7 +148,6 @@ plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
       }
     });
 
-    // Keep renderer sized to container
     const ro = new ResizeObserver(() => {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
