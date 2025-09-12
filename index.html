@@ -73,20 +73,23 @@
     renderer.domElement.style.touchAction = 'none';
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-  // Video texture + plane
+ // Video texture + plane
 const videoTex = new THREE.VideoTexture(videoEl);
 videoTex.encoding = THREE.sRGBEncoding;
 
 const plane = new THREE.Mesh(
-  new THREE.PlaneGeometry(16/9, 1), // ✅ lock to 1920x1080 (16:9)
+  new THREE.PlaneGeometry(1.78, 1),  // 16:9 ratio
   new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:true })
 );
 
-// keep the listener so brackets stay balanced, but do nothing (no extra scaling)
-videoEl.addEventListener('loadedmetadata', () => {
-  plane.scale.set(1, 1, 1);
-});
+// 👉 Scale the video plane so it fits the target image size
+const TARGET_W = 1.0;    // width of your target
+const TARGET_H = 0.56;   // height of your target (change if your marker is taller/shorter)
 
+const VID_W = 16/9;
+const VID_H = 1.0;
+
+plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
 
     // Anchor on target index 0
     const anchor = mindar.addAnchor(0);
