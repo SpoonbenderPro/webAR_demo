@@ -88,18 +88,26 @@
     // Anchor on target index 0
     const anchor = mindar.addAnchor(0);
 
-    // 🔁 Stick-to-camera vs anchor
-    const placeInFrontOfCamera = () => {
-      followAnchor = false;
-      camera.add(plane);
-      plane.position.set(0, 0, -1.0);
-      plane.rotation.set(0, 0, 0);
-      plane.visible = true;
-    };
-    const placeOnAnchor = () => {
-      followAnchor = true;  // now follow anchor smoothly
-      plane.visible = true;
-    };
+   // 📌 Stick-to-camera vs anchor
+const placeInFrontOfCamera = () => {
+  followAnchor = false;
+
+  // make sure the plane is under the camera
+  if (plane.parent !== camera) camera.add(plane);
+
+  plane.position.set(0, 0, -1.0);  // 1 meter in front of camera
+  plane.rotation.set(0, 0, 0);
+  plane.visible = true;
+};
+
+const placeOnAnchor = () => {
+  followAnchor = true;
+
+  // make sure the plane is back in the scene (world space)
+  if (plane.parent !== scene) scene.add(plane);
+
+  plane.visible = true;
+};
 
     anchor.onTargetFound = () => {
       hint.textContent = 'Tracking ✓';
