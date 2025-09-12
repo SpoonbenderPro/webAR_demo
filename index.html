@@ -73,17 +73,19 @@
     renderer.domElement.style.touchAction = 'none';
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // Video texture + plane
-    const videoTex = new THREE.VideoTexture(videoEl);
-    videoTex.encoding = THREE.sRGBEncoding;
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 0.56),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:true })
-    );
-   const plane = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.78, 1), // 1920/1080 = 1.78 ratio
+  // Video texture + plane
+const videoTex = new THREE.VideoTexture(videoEl);
+videoTex.encoding = THREE.sRGBEncoding;
+
+const plane = new THREE.Mesh(
+  new THREE.PlaneGeometry(16/9, 1), // ✅ lock to 1920x1080 (16:9)
   new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:true })
 );
+
+// keep the listener so brackets stay balanced, but do nothing (no extra scaling)
+videoEl.addEventListener('loadedmetadata', () => {
+  plane.scale.set(1, 1, 1);
+});
 
 
     // Anchor on target index 0
