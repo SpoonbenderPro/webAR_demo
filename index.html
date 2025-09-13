@@ -57,14 +57,15 @@
     const hint = document.getElementById('hint');
     const nudge = document.getElementById('nudge');
 
-    // NEW: session gate to prevent early playback
-    let sessionStarted = false;
+    // Gates
+    let sessionStarted = false;     // already in your file previously
+    let hasFoundTarget = false;     // NEW: becomes true only after first scan
 
-    // Ensure video is paused & muted initially
+    // Ensure paused & muted initially
     videoEl.pause();
     videoEl.muted = true;
 
-    // Initialize MindAR
+    // MindAR setup
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
@@ -81,7 +82,7 @@
     renderer.setClearColor(0x000000, 0);
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // Create planes without texture (texture added after Start)
+    // Content
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(16/9, 1),
       new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped:false })
@@ -98,18 +99,31 @@
     hudPlane.visible = false;
     hudScene.add(hudPlane);
 
-    // Anchor
     const anchor = mindar.addAnchor(0);
     anchor.group.add(plane);
 
     // Events
-    anchor.onTargetFound = () => {
+    anchor.onTargetFound = async () => {
       hint.textContent = 'Tracking ✓';
       plane.visible = true;
       hudPlane.visible = false;
-      // CHANGED: only allow auto-resume if AR session already started
-      if (sessionStarted && videoEl.paused) {
-        videoEl.play().catch(showNudge);
+
+      if (!sessionStarted) return;
+
+      hasFoundTarget = true; // first successful detection
+
+      // Only start playback when the image has actually been found.
+      if (videoEl.paused) {
+        try {
+          await videoEl.play();
+        } catch (e) {
+          // If autoplay with sound is blocked (e.g., iOS), force muted play once,
+          // then user can tap Unmute to hear audio.
+          videoEl.muted = true;
+          setMuteUI();
+          try { await videoEl.play(); } catch {}
+          showNudge();
+        }
       }
     };
 
@@ -117,6 +131,7 @@
       hint.textContent = 'Lost target → HUD mode';
       plane.visible = false;
       hudPlane.visible = true;
+      // We do NOT pause here so your "keep playing after trigger" flow remains.
     };
 
     // UI helpers
@@ -125,19 +140,12 @@
     setMuteUI();
 
     // Buttons
-    // CHANGED: Unmute never triggers playback unless AR session has started
-    muteBtn.addEventListener('click', async () => {
-      if (!sessionStarted) {
-        videoEl.muted = !videoEl.muted;
-        setMuteUI();
-        showNudge(); // gentle prompt to press Start AR
-        return;
-      }
+    // IMPORTANT CHANGE: Unmute now never starts playback by itself.
+    muteBtn.addEventListener('click', () => {
+      // Just toggle mute state; do NOT call play().
       videoEl.muted = !videoEl.muted;
       setMuteUI();
-      if (videoEl.paused) {
-        try { await videoEl.play(); } catch { showNudge(); }
-      }
+      // If user unmutes before any scan, there is still no audio because video hasn't started.
     });
 
     restartBtn.addEventListener('click', async () => {
@@ -146,22 +154,22 @@
     });
 
     startBtn.addEventListener('click', async () => {
-      // Create video texture on start
+      // Build video textures on start (safe even if video is paused)
       const videoTex = new THREE.VideoTexture(videoEl);
       videoTex.encoding = THREE.sRGBEncoding;
       plane.material.map = videoTex;
       hudPlane.material.map = videoTex;
 
-      videoEl.loop = true;        // keep your loop behavior
-      videoEl.muted = true;       // start muted as before
-      try { await videoEl.play(); } catch { showNudge(); }
+      // DO NOT start playback here anymore.
+      videoEl.loop = true;
+      videoEl.pause();  // be explicit
 
       startBtn.disabled = true;
       startBtn.textContent = 'Starting…';
 
       try {
         await mindar.start();
-        sessionStarted = true;    // NEW: flip the gate only after AR truly starts
+        sessionStarted = true;
 
         renderer.setAnimationLoop(() => {
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
@@ -171,7 +179,13 @@
             renderer.render(hudScene, hudCamera);
           }
         });
+
         startBtn.textContent = 'Running…';
+
+        // Optional: if user had already scanned before clicking Start (rare), we respect it
+        if (hasFoundTarget && videoEl.paused) {
+          try { await videoEl.play(); } catch {}
+        }
       } catch (e) {
         console.error(e);
         startBtn.disabled = false;
