@@ -63,7 +63,10 @@
       imageTargetSrc: './targets.mind',
       uiLoading:'no', uiScanning:'no', uiError:'no',
       warmupTolerance: 2,
-      missTolerance: 8
+      missTolerance: 8,
+      filterMinCF: 0.0001,   // smoother tracking
+  filterBeta: 0.01,      // lower = more smoothing, less jitter
+  smoothFactor: 0.8
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
@@ -118,6 +121,10 @@
     anchor.onTargetLost = () => {
       hint.textContent = 'Move back to the target…';
       placeInFrontOfCamera();
+
+      if (videoEl.paused) {
+    videoEl.play().catch(() => { showNudge(); });
+  }
     };
 
     // UI
