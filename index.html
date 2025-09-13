@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>WebAR — Stick-to-Camera + CTA</title>
+  <title>WebAR — Stick-to-Camera + HUD</title>
 
   <script type="importmap">
   {
@@ -16,17 +16,13 @@
   </script>
 
   <style>
-    html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif}
+    html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:sans-serif}
     #container{position:fixed;inset:0}
-    #container video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
-    #container canvas{position:fixed;inset:0;z-index:1}
     #hint{position:fixed;left:0;right:0;top:10px;text-align:center;color:#fff;opacity:.9;z-index:3}
     #ui{position:fixed;left:12px;right:12px;bottom:12px;z-index:4;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
     button,a.button{padding:10px 14px;border:0;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;background:#4f46e5;color:#fff;text-decoration:none}
     button.secondary{background:#374151}
-    /* Keep the video in the DOM but offscreen so the browser continues advancing frames for the VideoTexture.
-       display:none commonly causes the browser to stop updating frames which freezes the texture. */
-    #hiddenVideo{position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
+    #hiddenVideo{display:none}
     #nudge{position:fixed;left:50%;transform:translateX(-50%);bottom:86px;z-index:5;color:#fff;background:#000a;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);display:none}
   </style>
 </head>
@@ -60,98 +56,57 @@
     const hint      = document.getElementById('hint');
     const nudge     = document.getElementById('nudge');
 
+    // Init MindAR
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
-      uiLoading:'no', uiScanning:'no', uiError:'no',
-      warmupTolerance: 2,
-      missTolerance: 8,
-      filterMinCF: 0.0001,
-      filterBeta: 0.01,
-      smoothFactor: 0.8
+      uiLoading:'no', uiScanning:'no', uiError:'no'
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
-    renderer.domElement.style.touchAction = 'none';
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // 🎥 Video texture + plane (16:9) — anchored plane
+    // Video Texture
     const videoTex = new THREE.VideoTexture(videoEl);
     videoTex.encoding = THREE.sRGBEncoding;
 
+    // Marker Plane
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(16/9, 1),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:false })
+      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false })
     );
+    plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
 
-    // 👉 Scale the plane so it fits marker size
-    const TARGET_W = 1.0;       // marker width in scene units
-    const TARGET_H = 0.56;      // marker height
-    const VID_W = 16/9, VID_H = 1.0;
-    plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
-    plane.visible = false; // hidden until marker found
-
-    // --- HUD plane (camera-attached). Uses same video texture
+    // HUD Plane (separate scene + ortho cam)
+    const hudScene = new THREE.Scene();
+    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
     const hudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(16/9, 1),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:false })
+      new THREE.PlaneGeometry(1.5, 0.9),
+      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, transparent:false })
     );
-    hudPlane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
+    hudPlane.position.set(0,0,-1);
     hudPlane.visible = false;
-    // attach HUD plane to camera so it's screen-locked
-    camera.add(hudPlane);
-    hudPlane.position.set(0, 0, -3); // in front of camera for HUD
+    hudScene.add(hudPlane);
 
     // Anchor
     const anchor = mindar.addAnchor(0);
-    // attach anchored plane to anchor group
     anchor.group.add(plane);
-
-    // State
-    let inHUD = false; // whether we're currently showing HUD plane (camera-attached)
-
-    // Helpers
-    const placeOnAnchor = () => {
-      // ensure plane is a child of anchor.group and visible
-      if (plane.parent !== anchor.group) anchor.group.add(plane);
-      plane.position.set(0, 0, 0);
-      plane.rotation.set(0, 0, 0);
-      plane.visible = true;
-    };
-    const showHUD = () => {
-      // hide anchored plane and show hud plane (camera child)
-      plane.visible = false;
-      hudPlane.visible = true;
-      hudPlane.position.set(0, 0, -1.5);
-    };
 
     // Events
     anchor.onTargetFound = () => {
-      // Show anchored plane and start video on marker
       hint.textContent = 'Tracking ✓';
-      inHUD = false;
+      plane.visible = true;
       hudPlane.visible = false;
-      placeOnAnchor();
 
       if (videoEl.paused) {
-        videoEl.play()
-          .then(() => { videoTex.needsUpdate = true; })
-          .catch(() => { showNudge(); });
-      } else {
-        videoTex.needsUpdate = true;
+        videoEl.play().catch(()=>showNudge());
       }
     };
 
     anchor.onTargetLost = () => {
-      // Switch to HUD only after losing the marker
-      hint.textContent = 'Move back to the target…';
-      inHUD = true;
-      showHUD();
-
-      // ensure playback continues
-      if (videoEl.paused) {
-        videoEl.play().catch(() => { showNudge(); });
-      }
+      hint.textContent = 'Lost target → HUD mode';
+      plane.visible = false;
+      hudPlane.visible = true;
     };
 
     // UI
@@ -171,18 +126,19 @@
 
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true; startBtn.textContent = 'Starting…';
-      // do a muted play on user gesture to acquire playback permission
-      try { videoEl.muted = true; await videoEl.play(); } catch (e) { console.warn('muted play failed', e); }
+      videoEl.muted = true; try { await videoEl.play(); } catch {} videoEl.pause();
 
       try {
         await mindar.start();
-        // animation loop: always update video texture when frames are available
         renderer.setAnimationLoop(()=>{
-          hint.textContent('hudVisible:', hudPlane.visible, 'planeVisible:', plane.visible);
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
             videoTex.needsUpdate = true;
           }
-          renderer.render(scene, camera);
+          renderer.render(scene, camera);       // AR scene
+          if (hudPlane.visible) {
+            renderer.clearDepth();
+            renderer.render(hudScene, hudCamera); // HUD overlay
+          }
         });
         startBtn.textContent = 'Running…';
       } catch (e) {
@@ -195,18 +151,6 @@
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
     ro.observe(container);
-
-    // Debug helper
-    window._webarDebug = () => ({
-      paused: videoEl.paused,
-      readyState: videoEl.readyState,
-      muted: videoEl.muted,
-      anchoredVisible: plane.visible,
-      hudVisible: hudPlane.visible,
-      hudParent: hudPlane.parent && hudPlane.parent.type,
-      anchoredParent: plane.parent && plane.parent.type,
-      inHUD,
-    });
   </script>
 </body>
 </html>
