@@ -30,7 +30,7 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted loop></video>
+  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted ></video>
 
   <div id="ui">
     <button id="startBtn">Start AR</button>
@@ -67,7 +67,12 @@
       imageTargetSrc: './targets.mind',
       uiLoading: 'no',
       uiScanning: 'no',
-      uiError: 'no'
+      uiError: 'no',
+      warmupTolerance: 2,
+      missTolerance: 8,
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      smoothFactor: 0.8
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
