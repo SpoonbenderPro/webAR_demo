@@ -91,52 +91,47 @@
     const anchor = mindar.addAnchor(0);
 
     // State
-    let hudMode = false;
+    // State
+let hudMode = false;
 
-    // Helpers
-    const placeInFrontOfCamera = () => {
-      if (plane.parent !== camera) camera.add(plane);
-      plane.position.set(0, 0, -1.0);
-      plane.rotation.set(0, 0, 0);
-      plane.visible = true;
-    };
-    const placeOnAnchor = () => {
-      if (plane.parent !== anchor.group) anchor.group.add(plane);
-      plane.position.set(0, 0, 0);
-      plane.rotation.set(0, 0, 0);
-      plane.visible = true;
-    };
+// Helpers
+const placeInFrontOfCamera = () => {
+  if (plane.parent !== camera) camera.add(plane);
+  plane.position.set(0, 0, -1.0);
+  plane.rotation.set(0, 0, 0);
+  plane.visible = true;
+};
+const placeOnAnchor = () => {
+  if (plane.parent !== anchor.group) anchor.group.add(plane);
+  plane.position.set(0, 0, 0);
+  plane.rotation.set(0, 0, 0);
+  plane.visible = true;
+};
 
-    // Events
-    anchor.onTargetFound = () => {
-      hint.textContent = 'Tracking ✓';
+// Events
+anchor.onTargetFound = () => {
+  hint.textContent = 'Tracking ✓';
+  hudMode = false;        // reset HUD mode when marker is found
+  placeOnAnchor();        // stick to marker
 
-      if (!hudMode) {
-        hudMode = true; // 🔑 switch permanently after first detection
-        placeInFrontOfCamera();
-      } else {
-        placeInFrontOfCamera();
-      }
+  if (videoEl.paused) {
+    videoEl.play()
+      .then(() => { videoTex.needsUpdate = true; })
+      .catch(() => { showNudge(); });
+  } else {
+    videoTex.needsUpdate = true;
+  }
+};
 
-      if (videoEl.paused) {
-        videoEl.play()
-          .then(() => { videoTex.needsUpdate = true; })
-          .catch(() => { showNudge(); });
-      } else {
-        videoTex.needsUpdate = true;
-      }
-    };
+anchor.onTargetLost = () => {
+  hint.textContent = 'Lost target → switching to HUD';
+  hudMode = true;
+  placeInFrontOfCamera(); // move to camera
 
-    anchor.onTargetLost = () => {
-      if (hudMode) {
-        placeInFrontOfCamera();
-        if (videoEl.paused) {
-          videoEl.play().catch(() => { showNudge(); });
-        }
-      } else {
-        hint.textContent = 'Move back to the target…';
-      }
-    };
+  if (videoEl.paused) {
+    videoEl.play().catch(() => { showNudge(); });
+  }
+};
 
     // UI
     const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
