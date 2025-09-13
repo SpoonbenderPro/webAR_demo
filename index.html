@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>WebAR — Stick-to-Camera + CTA</title>
+  <title>WebAR — Stick-to-Camera + CTA (Fixed)</title>
 
   <script type="importmap">
   {
@@ -24,7 +24,8 @@
     #ui{position:fixed;left:12px;right:12px;bottom:12px;z-index:4;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
     button,a.button{padding:10px 14px;border:0;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;background:#4f46e5;color:#fff;text-decoration:none}
     button.secondary{background:#374151}
-    #hiddenVideo{display:none}
+    /* Note: the video element must NOT be display:none — some browsers will not advance its frames if fully removed from layout. Keep it offscreen/hidden instead. */
+    #hiddenVideo{position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
     #nudge{position:fixed;left:50%;transform:translateX(-50%);bottom:86px;z-index:5;color:#fff;background:#000a;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);display:none}
   </style>
 </head>
@@ -32,6 +33,7 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
+  <!-- keep video in DOM but offscreen (not display:none) so the browser can advance frames that we use as a texture -->
   <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted preload="auto" loop></video>
 
   <div id="ui">
@@ -58,42 +60,45 @@
     const hint      = document.getElementById('hint');
     const nudge     = document.getElementById('nudge');
 
+    // MindAR with smoothing options
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
       uiLoading:'no', uiScanning:'no', uiError:'no',
       warmupTolerance: 2,
       missTolerance: 8,
-      filterMinCF: 0.0001,   // smoother tracking
-  filterBeta: 0.01,      // lower = more smoothing, less jitter
-  smoothFactor: 0.8
+      // smoothing options (help reduce jitter)
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      smoothFactor: 0.8
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.touchAction = 'none';
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // 🎥 Video texture + plane (16:9)
+    // 🎥 Video texture + plane (16:9). Start invisible so it doesn't show before tracking
     const videoTex = new THREE.VideoTexture(videoEl);
     videoTex.encoding = THREE.sRGBEncoding;
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(16/9, 1),
       new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false, transparent:false })
     );
+    plane.visible = false; // hide until first track
 
-    // 👉 Scale the plane so it EXACTLY fits your marker size
-    //    MindAR’s default image-target width ≈ 1 unit. Set the height to your marker’s aspect.
-    const TARGET_W = 1.0;       // marker width in scene units
-    const TARGET_H = 0.56;      // marker height (set this to match your target image)
+    // Scale plane to match marker size
+    const TARGET_W = 1.0;
+    const TARGET_H = 0.56;
     const VID_W = 16/9, VID_H = 1.0;
     plane.scale.set(TARGET_W / VID_W, TARGET_H / VID_H, 1);
 
-    // Start attached to the anchor
+    // Anchor and attach plane to it initially
     const anchor = mindar.addAnchor(0);
     anchor.group.add(plane);
 
-    // Reparent for stick-to-camera when lost
+    // When marker is lost we will position the plane in front of the camera (stick-to-camera)
     const placeInFrontOfCamera = () => {
+      // we'll re-parent to camera to make it appear fixed in view
       if (plane.parent !== camera) camera.add(plane);
       plane.position.set(0, 0, -1.0);
       plane.rotation.set(0, 0, 0);
@@ -106,26 +111,34 @@
       plane.visible = true;
     };
 
+    // Debug helpers
+    const log = (...s) => { console.log('[webar]', ...s); };
+
     anchor.onTargetFound = () => {
+      log('onTargetFound');
       hint.textContent = 'Tracking ✓';
       placeOnAnchor();
 
+      // Start playing if not playing yet. Browsers are more permissive if playback was acquired via a user gesture earlier
       if (videoEl.paused) {
-        videoEl.play()
-          .then(() => { videoTex.needsUpdate = true; })
-          .catch(() => { showNudge(); });
+        videoEl.play().then(() => { videoTex.needsUpdate = true; log('video.play() success on found'); })
+          .catch((err) => { log('video.play() rejected on found', err); showNudge(); });
       } else {
         videoTex.needsUpdate = true;
       }
     };
-    anchor.onTargetLost = () => {
-      hint.textContent = 'Move back to the target…';
-      placeInFrontOfCamera();
-      plane.visible = true;
 
+    anchor.onTargetLost = () => {
+      log('onTargetLost');
+      hint.textContent = 'Move back to the target…';
+
+      // Stick to camera and keep playing — do NOT pause
+      placeInFrontOfCamera();
+
+      // Ensure video remains playing (force play if browser paused it)
       if (videoEl.paused) {
-    videoEl.play().catch(() => { showNudge(); });
-  }
+        videoEl.play().then(() => log('video.play() success on lost')).catch((err)=>{ log('video.play() rejected on lost', err); showNudge(); });
+      }
     };
 
     // UI
@@ -134,26 +147,42 @@
     setMuteUI();
 
     muteBtn.addEventListener('click', async () => {
+      // toggling mute is a user gesture so unmute will be allowed
       videoEl.muted = !videoEl.muted; setMuteUI();
-      try { await videoEl.play(); } catch { showNudge(); }
+      try { await videoEl.play(); } catch (e) { console.warn('play after unmute failed', e); showNudge(); }
     });
 
     restartBtn.addEventListener('click', async () => {
-      try { await mindar.stop(); } catch {}
+      try { await mindar.stop(); } catch (e) { log('stop failed', e); }
       await mindar.start();
     });
 
+    // START: when user taps Start AR we start MindAR and also perform a muted play to acquire playback permission.
+    // We keep the video playing in the background (muted). The plane remains hidden until the marker is found.
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true; startBtn.textContent = 'Starting…';
-      videoEl.muted = true; try { await videoEl.play(); } catch {} ;
+
+      // Acquire permission by doing a muted play on user gesture
+      try {
+        videoEl.muted = true;
+        await videoEl.play();
+        log('muted play acquired');
+      } catch (err) {
+        console.warn('muted play rejected', err);
+        // still try to continue — onTargetFound will attempt to play again
+      }
 
       try {
         await mindar.start();
+
+        // animation loop: always update the video texture if it has new frames
         renderer.setAnimationLoop(()=>{
-        if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-    videoTex.needsUpdate = true;   // 🔑 always refresh the texture
-  }
-        renderer.render(scene, camera)});
+          if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+            videoTex.needsUpdate = true;
+          }
+          renderer.render(scene, camera);
+        });
+
         startBtn.textContent = 'Running…';
       } catch (e) {
         console.error(e);
@@ -161,10 +190,20 @@
       }
     });
 
+    // keep renderer sized correctly
     const ro = new ResizeObserver(() => {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
     ro.observe(container);
+
+    // Small runtime debug helper you can paste in console
+    window._webarDebug = () => ({
+      paused: videoEl.paused,
+      readyState: videoEl.readyState,
+      muted: videoEl.muted,
+      parent: plane.parent && plane.parent.type,
+    });
+
   </script>
 </body>
 </html>
