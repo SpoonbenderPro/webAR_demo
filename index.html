@@ -115,31 +115,44 @@
     const log = (...s) => { console.log('[webar]', ...s); };
 
     anchor.onTargetFound = () => {
-      log('onTargetFound');
-      hint.textContent = 'Tracking ✓';
-      placeOnAnchor();
+  console.log("[webar] onTargetFound");
 
-      // Start playing if not playing yet. Browsers are more permissive if playback was acquired via a user gesture earlier
-      if (videoEl.paused) {
-        videoEl.play().then(() => { videoTex.needsUpdate = true; log('video.play() success on found'); })
-          .catch((err) => { log('video.play() rejected on found', err); showNudge(); });
-      } else {
-        videoTex.needsUpdate = true;
-      }
-    };
+  hint.textContent = 'Tracking ✓';
+
+  if (plane.parent !== anchor.group) {
+    anchor.group.add(plane);
+  }
+  plane.position.set(0, 0, 0);
+  plane.rotation.set(0, 0, 0);
+  plane.visible = true;
+
+  if (videoEl.paused) {
+    videoEl.play().catch(() => { showNudge(); });
+  }
+};
+
 
     anchor.onTargetLost = () => {
-      log('onTargetLost');
-      hint.textContent = 'Move back to the target…';
+  console.log("[webar] onTargetLost");
 
-      // Stick to camera and keep playing — do NOT pause
-      placeInFrontOfCamera();
+  hint.textContent = 'Move back to the target…';
 
-      // Ensure video remains playing (force play if browser paused it)
-      if (videoEl.paused) {
-        videoEl.play().then(() => log('video.play() success on lost')).catch((err)=>{ log('video.play() rejected on lost', err); showNudge(); });
-      }
-    };
+  // 👇 reparent plane to camera
+  if (plane.parent !== camera) {
+    camera.add(plane);
+  }
+
+  // 👇 put it in front of camera at a visible distance
+  plane.position.set(0, 0, -1.5);   // 1.5 units in front
+  plane.rotation.set(0, 0, 0);
+  plane.visible = true;
+
+  // 👇 ensure playback continues
+  if (videoEl.paused) {
+    videoEl.play().catch(() => { showNudge(); });
+  }
+};
+
 
     // UI
     const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
