@@ -30,12 +30,8 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted  loop></video>
-<script type="module">
-const videoEl = document.getElementById('hiddenVideo');
-videoEl.pause();    // stop auto-play immediately
-videoEl.muted = true;
-</script>
+  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted loop></video>
+
   <div id="ui">
     <button id="startBtn">Start AR</button>
     <button id="muteBtn" class="secondary">Unmute</button>
@@ -52,40 +48,43 @@ videoEl.muted = true;
     const CTA_URL = 'https://example.com';
     document.getElementById('ctaBtn').href = CTA_URL;
 
+    // DOM elements
     const container = document.getElementById('container');
-    const startBtn  = document.getElementById('startBtn');
-    const restartBtn= document.getElementById('restartBtn');
-    const muteBtn   = document.getElementById('muteBtn');
-    const videoEl   = document.getElementById('hiddenVideo');
-    const hint      = document.getElementById('hint');
-    const nudge     = document.getElementById('nudge');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const videoEl = document.getElementById('hiddenVideo');
+    const hint = document.getElementById('hint');
+    const nudge = document.getElementById('nudge');
 
-    // Init MindAR
+    // Pause video initially
+    videoEl.pause();
+    videoEl.muted = true;
+
+    // Initialize MindAR
     const mindar = new MindARThree({
       container,
       imageTargetSrc: './targets.mind',
-      uiLoading:'no', uiScanning:'no', uiError:'no'
+      uiLoading: 'no',
+      uiScanning: 'no',
+      uiError: 'no'
     });
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // Video Texture
-    
-
-    // Marker Plane
+    // Create planes without texture (texture added after Start)
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(16/9, 1),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false })
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped:false })
     );
     plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
 
-    // HUD Plane (separate scene + ortho cam)
     const hudScene = new THREE.Scene();
     const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
     const hudPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(1.5, 0.9),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, transparent:false })
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent:false })
     );
     hudPlane.position.set(0,0,-1);
     hudPlane.visible = false;
@@ -100,10 +99,7 @@ videoEl.muted = true;
       hint.textContent = 'Tracking ✓';
       plane.visible = true;
       hudPlane.visible = false;
-
-      if (videoEl.paused) {
-        videoEl.play().catch(()=>showNudge());
-      }
+      if (videoEl.paused) videoEl.play().catch(showNudge);
     };
 
     anchor.onTargetLost = () => {
@@ -112,13 +108,15 @@ videoEl.muted = true;
       hudPlane.visible = true;
     };
 
-    // UI
+    // UI helpers
     const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
-    const showNudge = () => { nudge.style.display='block'; setTimeout(()=> nudge.style.display='none', 2000); };
+    const showNudge = () => { nudge.style.display = 'block'; setTimeout(()=> nudge.style.display='none', 2000); };
     setMuteUI();
 
+    // Button events
     muteBtn.addEventListener('click', async () => {
-      videoEl.muted = !videoEl.muted; setMuteUI();
+      videoEl.muted = !videoEl.muted;
+      setMuteUI();
       try { await videoEl.play(); } catch { showNudge(); }
     });
 
@@ -128,33 +126,34 @@ videoEl.muted = true;
     });
 
     startBtn.addEventListener('click', async () => {
-  const videoTex = new THREE.VideoTexture(videoEl);
-  videoTex.encoding = THREE.sRGBEncoding;
-  plane.material.map = videoTex;
-  hudPlane.material.map = videoTex;
+      // Create video texture on start
+      const videoTex = new THREE.VideoTexture(videoEl);
+      videoTex.encoding = THREE.sRGBEncoding;
+      plane.material.map = videoTex;
+      hudPlane.material.map = videoTex;
 
-  startBtn.disabled = true;
-  startBtn.textContent = 'Starting…';
+      startBtn.disabled = true;
+      startBtn.textContent = 'Starting…';
 
-  try {
-    await mindar.start();
-    renderer.setAnimationLoop(() => {
-      if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
-      renderer.render(scene, camera);
-      if (hudPlane.visible) {
-        renderer.clearDepth();
-        renderer.render(hudScene, hudCamera);
+      try {
+        await mindar.start();
+        renderer.setAnimationLoop(() => {
+          if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+          renderer.render(scene, camera);
+          if (hudPlane.visible) {
+            renderer.clearDepth();
+            renderer.render(hudScene, hudCamera);
+          }
+        });
+        startBtn.textContent = 'Running…';
+      } catch (e) {
+        console.error(e);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start AR (Retry)';
       }
     });
-    startBtn.textContent = 'Running…';
-  } catch (e) {
-    console.error(e);
-    startBtn.disabled = false;
-    startBtn.textContent = 'Start AR (Retry)';
-  }
-});
 
-
+    // Resize handling
     const ro = new ResizeObserver(() => {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
