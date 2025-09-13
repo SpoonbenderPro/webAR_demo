@@ -30,8 +30,12 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted preload="auto" loop></video>
-
+  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted  loop></video>
+<script type="module">
+const videoEl = document.getElementById('hiddenVideo');
+videoEl.pause();    // stop auto-play immediately
+videoEl.muted = true;
+</script>
   <div id="ui">
     <button id="startBtn">Start AR</button>
     <button id="muteBtn" class="secondary">Unmute</button>
@@ -67,8 +71,7 @@
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
     // Video Texture
-    const videoTex = new THREE.VideoTexture(videoEl);
-    videoTex.encoding = THREE.sRGBEncoding;
+    
 
     // Marker Plane
     const plane = new THREE.Mesh(
@@ -76,17 +79,17 @@
       new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false })
     );
     plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
-    plane.visible = false;
 
-    // HUD Plane (match marker resolution)
+    // HUD Plane (separate scene + ortho cam)
+    const hudScene = new THREE.Scene();
+    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
     const hudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(16/9, 1),
-      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, toneMapped:false })
+      new THREE.PlaneGeometry(1.5, 0.9),
+      new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide, transparent:false })
     );
-    hudPlane.scale.set(1.0/(16/9), 0.56/1.0, 1);
     hudPlane.position.set(0,0,-1);
     hudPlane.visible = false;
-    scene.add(hudPlane);
+    hudScene.add(hudPlane);
 
     // Anchor
     const anchor = mindar.addAnchor(0);
@@ -107,10 +110,6 @@
       hint.textContent = 'Lost target → HUD mode';
       plane.visible = false;
       hudPlane.visible = true;
-
-      if (videoEl.paused) {
-        videoEl.play().catch(()=>showNudge());
-      }
     };
 
     // UI
@@ -129,28 +128,32 @@
     });
 
     startBtn.addEventListener('click', async () => {
-      startBtn.disabled = true; startBtn.textContent = 'Starting…';
+  const videoTex = new THREE.VideoTexture(videoEl);
+  videoTex.encoding = THREE.sRGBEncoding;
+  plane.material.map = videoTex;
+  hudPlane.material.map = videoTex;
 
-      try {
-        await mindar.start();
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting…';
 
-        // Only now start the video
-        videoEl.muted = true;
-        try { await videoEl.play(); } catch {}
-
-        renderer.setAnimationLoop(()=>{
-          if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-            videoTex.needsUpdate = true;
-          }
-          renderer.render(scene, camera);
-        });
-
-        startBtn.textContent = 'Running…';
-      } catch (e) {
-        console.error(e);
-        startBtn.disabled = false; startBtn.textContent = 'Start AR (Retry)';
+  try {
+    await mindar.start();
+    renderer.setAnimationLoop(() => {
+      if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+      renderer.render(scene, camera);
+      if (hudPlane.visible) {
+        renderer.clearDepth();
+        renderer.render(hudScene, hudCamera);
       }
     });
+    startBtn.textContent = 'Running…';
+  } catch (e) {
+    console.error(e);
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start AR (Retry)';
+  }
+});
+
 
     const ro = new ResizeObserver(() => {
       renderer.setSize(container.clientWidth, container.clientHeight, false);
