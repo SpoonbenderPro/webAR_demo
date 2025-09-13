@@ -149,7 +149,11 @@
 
       try {
         await mindar.start();
-        renderer.setAnimationLoop(()=>renderer.render(scene, camera));
+        renderer.setAnimationLoop(()=>{
+        if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+    videoTex.needsUpdate = true;   // 🔑 always refresh the texture
+  }
+        renderer.render(scene, camera)});
         startBtn.textContent = 'Running…';
       } catch (e) {
         console.error(e);
