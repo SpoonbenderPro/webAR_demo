@@ -119,12 +119,10 @@
 
   hint.textContent = 'Tracking ✓';
 
-  if (plane.parent !== anchor.group) {
-    anchor.group.add(plane);
-  }
-  plane.position.set(0, 0, 0);
-  plane.rotation.set(0, 0, 0);
-  plane.visible = true;
+  camera.add(plane);
+    plane.position.set(0, 0, -1.5);   // distance in front of camera
+    plane.rotation.set(0, 0, 0);
+    plane.visible = true;
 
   if (videoEl.paused) {
     videoEl.play().catch(() => { showNudge(); });
