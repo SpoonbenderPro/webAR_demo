@@ -121,6 +121,7 @@
     anchor.onTargetLost = () => {
       hint.textContent = 'Move back to the target…';
       placeInFrontOfCamera();
+      plane.visible = true;
 
       if (videoEl.paused) {
     videoEl.play().catch(() => { showNudge(); });
