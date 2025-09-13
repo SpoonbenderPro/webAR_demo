@@ -145,7 +145,7 @@
 
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true; startBtn.textContent = 'Starting…';
-      videoEl.muted = true; try { await videoEl.play(); } catch {} videoEl.pause();
+      videoEl.muted = true; try { await videoEl.play(); } catch {} ;
 
       try {
         await mindar.start();
