@@ -30,7 +30,7 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline ></video>
+  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline  muted preload="none"></video>
 
   <div id="ui">
     <button id="startBtn">Start AR</button>
@@ -136,7 +136,9 @@
       videoTex.encoding = THREE.sRGBEncoding;
       plane.material.map = videoTex;
       hudPlane.material.map = videoTex;
-
+      videoEl.loop = true; // set loop dynamically
+      videoEl.muted = true; // ensure muted if required
+       try { await videoEl.play(); } catch { showNudge(); }
       startBtn.disabled = true;
       startBtn.textContent = 'Starting…';
 
