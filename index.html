@@ -30,7 +30,7 @@
   <div id="hint">Point your camera at the target image</div>
   <div id="container"></div>
 
-  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline  muted preload="none"></video>
+  <video id="hiddenVideo" src="./promo.mp4" playsinline webkit-playsinline muted preload="none"></video>
 
   <div id="ui">
     <button id="startBtn">Start AR</button>
@@ -57,7 +57,10 @@
     const hint = document.getElementById('hint');
     const nudge = document.getElementById('nudge');
 
-    // Pause video initially
+    // NEW: session gate to prevent early playback
+    let sessionStarted = false;
+
+    // Ensure video is paused & muted initially
     videoEl.pause();
     videoEl.muted = true;
 
@@ -104,7 +107,10 @@
       hint.textContent = 'Tracking ✓';
       plane.visible = true;
       hudPlane.visible = false;
-      if (videoEl.paused) videoEl.play().catch(showNudge);
+      // CHANGED: only allow auto-resume if AR session already started
+      if (sessionStarted && videoEl.paused) {
+        videoEl.play().catch(showNudge);
+      }
     };
 
     anchor.onTargetLost = () => {
@@ -118,11 +124,20 @@
     const showNudge = () => { nudge.style.display = 'block'; setTimeout(()=> nudge.style.display='none', 2000); };
     setMuteUI();
 
-    // Button events
+    // Buttons
+    // CHANGED: Unmute never triggers playback unless AR session has started
     muteBtn.addEventListener('click', async () => {
+      if (!sessionStarted) {
+        videoEl.muted = !videoEl.muted;
+        setMuteUI();
+        showNudge(); // gentle prompt to press Start AR
+        return;
+      }
       videoEl.muted = !videoEl.muted;
       setMuteUI();
-      try { await videoEl.play(); } catch { showNudge(); }
+      if (videoEl.paused) {
+        try { await videoEl.play(); } catch { showNudge(); }
+      }
     });
 
     restartBtn.addEventListener('click', async () => {
@@ -136,14 +151,18 @@
       videoTex.encoding = THREE.sRGBEncoding;
       plane.material.map = videoTex;
       hudPlane.material.map = videoTex;
-      videoEl.loop = true; // set loop dynamically
-      videoEl.muted = true; // ensure muted if required
-       try { await videoEl.play(); } catch { showNudge(); }
+
+      videoEl.loop = true;        // keep your loop behavior
+      videoEl.muted = true;       // start muted as before
+      try { await videoEl.play(); } catch { showNudge(); }
+
       startBtn.disabled = true;
       startBtn.textContent = 'Starting…';
 
       try {
         await mindar.start();
+        sessionStarted = true;    // NEW: flip the gate only after AR truly starts
+
         renderer.setAnimationLoop(() => {
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
           renderer.render(scene, camera);
