@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>WebAR — Stick-to-Camera + HUD</title>
+  <title>WebAR — Smart Tracking + HUD</title>
 
   <script type="importmap">
   {
@@ -57,11 +57,14 @@
     const hint = document.getElementById('hint');
     const nudge = document.getElementById('nudge');
 
-    // Gates
-    let sessionStarted = false;     // already in your file previously
-    let hasFoundTarget = false;     // NEW: becomes true only after first scan
+    // State
+    let sessionStarted = false;
+    let hasFoundTarget = false;
+    let currentMode = 'hud'; // 'hud' or 'ar'
+    let lastSwitchTime = 0;
+    const SWITCH_COOLDOWN = 1000; // ms
+    const CONFIDENCE_THRESHOLD = 0.3;
 
-    // Ensure paused & muted initially
     videoEl.pause();
     videoEl.muted = true;
 
@@ -78,17 +81,19 @@
       filterBeta: 0.01,
       smoothFactor: 0.8
     });
+
     const { renderer, scene, camera } = mindar;
     renderer.setClearColor(0x000000, 0);
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-    // Content
+    // AR plane (attached to target)
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(16/9, 1),
       new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped:false })
     );
     plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
 
+    // HUD scene (fixed to screen)
     const hudScene = new THREE.Scene();
     const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
     const hudPlane = new THREE.Mesh(
@@ -102,23 +107,23 @@
     const anchor = mindar.addAnchor(0);
     anchor.group.add(plane);
 
+    // UI helpers
+    const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
+    const showNudge = () => { nudge.style.display = 'block'; setTimeout(()=> nudge.style.display='none', 2000); };
+    setMuteUI();
+
     // Events
     anchor.onTargetFound = async () => {
       hint.textContent = 'Tracking ✓';
-      plane.visible = true;
-      hudPlane.visible = false;
+      hasFoundTarget = true;
 
       if (!sessionStarted) return;
 
-      hasFoundTarget = true; // first successful detection
-
-      // Only start playback when the image has actually been found.
+      // Start video only when found
       if (videoEl.paused) {
         try {
           await videoEl.play();
         } catch (e) {
-          // If autoplay with sound is blocked (e.g., iOS), force muted play once,
-          // then user can tap Unmute to hear audio.
           videoEl.muted = true;
           setMuteUI();
           try { await videoEl.play(); } catch {}
@@ -131,21 +136,36 @@
       hint.textContent = 'Lost target → HUD mode';
       plane.visible = false;
       hudPlane.visible = true;
-      // We do NOT pause here so your "keep playing after trigger" flow remains.
+      currentMode = 'hud';
     };
 
-    // UI helpers
-    const setMuteUI = () => { muteBtn.textContent = videoEl.muted ? 'Unmute' : 'Mute'; };
-    const showNudge = () => { nudge.style.display = 'block'; setTimeout(()=> nudge.style.display='none', 2000); };
-    setMuteUI();
+    // 👁 NEW: Confidence-based switching
+    anchor.onTargetUpdate = (event) => {
+      const now = performance.now();
+      if (now - lastSwitchTime < SWITCH_COOLDOWN) return;
+
+      const confidence = event.detail?.estimate || 0;
+
+      if (confidence > CONFIDENCE_THRESHOLD && currentMode !== 'ar') {
+        plane.visible = true;
+        hudPlane.visible = false;
+        currentMode = 'ar';
+        lastSwitchTime = now;
+        hint.textContent = 'Tracking ✓';
+      } 
+      else if (confidence <= CONFIDENCE_THRESHOLD && currentMode !== 'hud') {
+        plane.visible = false;
+        hudPlane.visible = true;
+        currentMode = 'hud';
+        lastSwitchTime = now;
+        hint.textContent = 'Low visibility → HUD mode';
+      }
+    };
 
     // Buttons
-    // IMPORTANT CHANGE: Unmute now never starts playback by itself.
     muteBtn.addEventListener('click', () => {
-      // Just toggle mute state; do NOT call play().
       videoEl.muted = !videoEl.muted;
       setMuteUI();
-      // If user unmutes before any scan, there is still no audio because video hasn't started.
     });
 
     restartBtn.addEventListener('click', async () => {
@@ -154,15 +174,13 @@
     });
 
     startBtn.addEventListener('click', async () => {
-      // Build video textures on start (safe even if video is paused)
       const videoTex = new THREE.VideoTexture(videoEl);
       videoTex.encoding = THREE.sRGBEncoding;
       plane.material.map = videoTex;
       hudPlane.material.map = videoTex;
 
-      // DO NOT start playback here anymore.
       videoEl.loop = true;
-      videoEl.pause();  // be explicit
+      videoEl.pause();
 
       startBtn.disabled = true;
       startBtn.textContent = 'Starting…';
@@ -173,16 +191,18 @@
 
         renderer.setAnimationLoop(() => {
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
+
           renderer.render(scene, camera);
           if (hudPlane.visible) {
             renderer.clearDepth();
+            // Lock HUD to camera orientation so it’s static
+            hudPlane.quaternion.copy(hudCamera.quaternion);
             renderer.render(hudScene, hudCamera);
           }
         });
 
         startBtn.textContent = 'Running…';
 
-        // Optional: if user had already scanned before clicking Start (rare), we respect it
         if (hasFoundTarget && videoEl.paused) {
           try { await videoEl.play(); } catch {}
         }
