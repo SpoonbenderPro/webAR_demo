@@ -90,7 +90,7 @@
     plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
 
     const hudScene = new THREE.Scene();
-    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
+    const hudCamera = new THREE.OrthographicCamera(1, 1, 1, 1, 0, 10);
     const hudPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(1.5, 0.9),
       new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent:false })
