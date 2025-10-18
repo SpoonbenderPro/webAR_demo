@@ -90,6 +90,7 @@
     plane.scale.set(1.0/(16/9), 0.56/1.0, 1);
 
     const hudScene = scene; // reuse same scene
+    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
 const hudPlane = new THREE.Mesh(
   new THREE.PlaneGeometry(16/9, 1),
   new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent:false })
@@ -174,7 +175,10 @@ camera.add(hudPlane);
         renderer.setAnimationLoop(() => {
           if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) videoTex.needsUpdate = true;
           renderer.render(scene, camera);
-          
+          if (hudPlane.visible) {
+            renderer.clearDepth();
+            renderer.render(hudScene, hudCamera);
+          }
         });
 
         startBtn.textContent = 'Running…';
