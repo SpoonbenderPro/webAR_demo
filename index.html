@@ -79,6 +79,7 @@
       smoothFactor: 0.8
     });
     const { renderer, scene, camera } = mindar;
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x000000, 0);
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
@@ -89,7 +90,7 @@
     );
     plane.scale.set(1.0 / (16 / 9), 0.56 / 1.0, 1);
 
-    // HUD (overlay) setup - rendered separately so it doesn’t disappear when target lost
+    
     const hudScene = new THREE.Scene();
     const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
     const hudPlane = new THREE.Mesh(
