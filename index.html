@@ -79,7 +79,7 @@
       smoothFactor: 0.8
     });
     const { renderer, scene, camera } = mindar;
-    renderer.setPixelRatio(window.devicePixelRatio);
+    
     renderer.setClearColor(0x000000, 0);
     scene.add(new THREE.AmbientLight(0xffffff, 1));
 
@@ -92,14 +92,15 @@
 
     
     const hudScene = new THREE.Scene();
-    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
-    const hudPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.6, 0.9),
-      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: false })
-    );
-    hudPlane.position.set(0, 0, -1);
-    hudPlane.visible = false;
-    hudScene.add(hudPlane);
+
+const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10);
+const hudPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1), 
+  new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: false })
+);
+hudPlane.position.set(0, 0, -1);
+hudPlane.visible = false;
+hudScene.add(hudPlane);
 
     // Anchor setup
     const anchor = mindar.addAnchor(0);
